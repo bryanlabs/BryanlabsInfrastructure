@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Template to configure IAM roles and policies for UpdateNameservers.
+Resources:
+  UpdateNameserversEventRule:
+    Properties:
+      Description: EventRule
+      EventPattern:
+        detail:
+          eventName:
+          - CreateHostedZone
+          eventSource:
+          - route53.amazonaws.com
+        detail-type:
+        - AWS API Call via CloudTrail
+        source:
+        - aws.route53
+      State: ENABLED
+      Targets:
+      - Arn:
+          Ref: UpdateNameserversSNSTopic
+        Id: UpdateNameserversSNSTopic
+    Type: AWS::Events::Rule
+  UpdateNameserversFunction:
+    Properties:
+      Code:
+        ZipFile:
+          Fn::Sub: "from __future__ import print_function\nimport json\nprint('Loading\
+            \ function')\ndef lambda_handler(event, context):\n    print(\"Received\
+            \ event:\" + json.dumps(event, indent=2))\n    message = event['Records'][0]['Sns']['Message']\n\
+            \    print(\"From SNS:\" + message)\n    return message\n"
+      Description: UpdateNameservers
+      FunctionName: UpdateNameservers
+      Handler: index.lambda_handler
+      MemorySize: 2048
+      Role:
+        Fn::GetAtt:
+        - UpdateNameserversRole
+        - Arn
+      Runtime: python3.6
+      Timeout: 300
+    Type: AWS::Lambda::Function
+  UpdateNameserversPermission:
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Ref: UpdateNameserversFunction
+      Principal: sns.amazonaws.com
+      SourceArn:
+        Ref: UpdateNameserversSNSTopic
+    Type: AWS::Lambda::Permission
+  UpdateNameserversPolicy:
+    Properties:
+      ManagedPolicyName: lambda-UpdateNameservers
+      PolicyDocument:
+        Statement:
+        - Action: '*'
+          Effect: Allow
+          Resource: '*'
+        Version: '2012-10-17'
+      Roles:
+      - Ref: UpdateNameserversRole
+    Type: AWS::IAM::ManagedPolicy
+  UpdateNameserversRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+        Version: '2012-10-17'
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      RoleName: lambda-UpdateNameservers
+    Type: AWS::IAM::Role
+  UpdateNameserversSNSTopic:
+    DependsOn:
+    - UpdateNameserversFunction
+    Properties:
+      Subscription:
+      - Endpoint:
+          Fn::GetAtt:
+          - UpdateNameserversFunction
+          - Arn
+        Protocol: lambda
+    Type: AWS::SNS::Topic

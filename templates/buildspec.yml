@@ -1,0 +1,19 @@
+version: 0.2
+
+phases:
+
+  build:
+    commands:
+
+      # Package the parentstack
+      - aws cloudformation package --template stack.yml --s3-bucket __S3PUBLICBUCKET --s3-prefix __S3PREFIX --output-template template-export.yml
+      # Upload the nested stacks to S3.
+      - ls
+      - aws s3 sync . s3://__S3PUBLICBUCKET/__S3PREFIX/ --acl public-read
+      # Upload Assets
+      - aws s3 sync public/assets/ s3://__S3PUBLICBUCKET/assets/ --acl public-read
+
+# Create an artifact to be used by cloudformation changesets.
+artifacts:
+  files:
+    - '**/*'

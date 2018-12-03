@@ -1,0 +1,220 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Stack (Network)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Region Availability Zones
+      Parameters:
+      - AvailabilityZone1
+      - AvailabilityZone2
+    - Label:
+        default: Bastion
+      Parameters:
+      - KeyName
+      - LogRetentionInDays
+      - SSHFrom
+    ParameterLabels:
+      AvailabilityZone1:
+        default: Availability Zone 1
+      AvailabilityZone2:
+        default: Availability Zone 2
+      EC2KeyPairName:
+        default: EC2 Key Pair
+      KeyName:
+        default: EC2 Key Pair
+      LogRetentionInDays:
+        default: Log Retention
+      SSHFrom:
+        default: SSH Whitelist
+      TemplateBucket:
+        default: CloudFormation Bucket
+Outputs:
+  ApplicationStackName:
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-ApplicationStack
+    Value:
+      Fn::GetAtt:
+      - ApplicationStack
+      - Outputs.Name
+  BastionStackName:
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-BastionStackName
+    Value:
+      Fn::GetAtt:
+      - BastionStack
+      - Outputs.Name
+  CICDStackName:
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-CICDStackStackName
+    Value:
+      Fn::GetAtt:
+      - CICDStack
+      - Outputs.Name
+  NetworkStackName:
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-NetworkStackName
+    Value:
+      Fn::GetAtt:
+      - NetworkStack
+      - Outputs.Name
+Parameters:
+  AppIngressPort:
+    ConstraintDescription: TCP ports must be between 0 - 65535
+    Default: 80
+    Description: The application ingress port used by security groups
+    MaxValue: 65535
+    MinValue: 0
+    Type: Number
+  AvailabilityZone1:
+    ConstraintDescription: Must be a valid availability zone
+    Default: us-east-1c
+    Description: The first availability zone in the region
+    Type: AWS::EC2::AvailabilityZone::Name
+  AvailabilityZone2:
+    ConstraintDescription: Must be a valid availability zone
+    Default: us-east-1d
+    Description: The second availability zone in the region
+    Type: AWS::EC2::AvailabilityZone::Name
+  EC2KeyPairName:
+    Description: EC2 key pair name for SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+  ELBIngressPort:
+    ConstraintDescription: TCP ports must be between 0 - 65535
+    Default: 80
+    Description: The ELB ingress port used by security groups
+    MaxValue: 65535
+    MinValue: 0
+    Type: Number
+  ELBIngressPortHTTPS:
+    ConstraintDescription: TCP ports must be between 0 - 65535
+    Default: 443
+    Description: The ELB ingress port used by security groups
+    MaxValue: 65535
+    MinValue: 0
+    Type: Number
+  LogRetentionInDays:
+    Default: 90
+    Description: Number of days you would like your CloudWatch Logs to be retained
+    Type: Number
+  SSHFrom:
+    Default: 0.0.0.0/0
+    Description: Limit SSH access to bastion hosts to a CIDR IP block
+    MaxLength: 18
+    MinLength: 9
+    Type: String
+  SimpleADPW:
+    Type: String
+  SeedURL:
+    Description: Source Repository to seed new code commit repository from.
+    Type: String
+  TemplateBucket:
+    Description: The template bucket for the CloudFormation templates
+    Type: String
+Resources:
+  ADStack:
+    DependsOn:
+    - NetworkStack
+    Properties:
+      Parameters:
+        NetworkStackName:
+          Fn::GetAtt:
+          - NetworkStack
+          - Outputs.Name
+        SimpleADPW:
+          Ref: SimpleADPW
+      TemplateURL:
+        Fn::Sub: https://s3.amazonaws.com/${TemplateBucket}/ad.cft
+    Type: AWS::CloudFormation::Stack
+  ApplicationStack:
+    DependsOn:
+    - NetworkStack
+    Properties:
+      Parameters:
+        ApplicationName:
+          Ref: AWS::StackName
+        AutoScalingMaxInstanceCount: 2
+        AutoScalingMinInstanceCount: 1
+        DevInstanceType: t2.micro
+        EC2KeyPairName:
+          Ref: EC2KeyPairName
+        SSLCertificateArn: arn:aws:acm:us-east-1:601953533983:certificate/2b1ae724-54fc-48f9-a782-ede230d61713
+        EnvironmentName: dev
+        NetworkStackName:
+          Fn::GetAtt:
+          - NetworkStack
+          - Outputs.Name
+        StackType: go
+      TemplateURL:
+        Fn::Sub: https://s3.amazonaws.com/${TemplateBucket}/application.cft
+    Type: AWS::CloudFormation::Stack
+  BastionStack:
+    DependsOn:
+    - NetworkStack
+    Properties:
+      Parameters:
+        ApplicationName:
+          Ref: AWS::StackName
+        KeyName:
+          Ref: EC2KeyPairName
+        LogRetentionInDays:
+          Ref: LogRetentionInDays
+        NetworkStackName:
+          Fn::GetAtt:
+          - NetworkStack
+          - Outputs.Name
+      TemplateURL:
+        Fn::Sub: https://s3.amazonaws.com/${TemplateBucket}/bastion.cft
+    Type: AWS::CloudFormation::Stack
+  CICDStack:
+    Properties:
+      Parameters:
+        AppName:
+          Ref: AWS::StackName
+        ProjectId:
+          Ref: AWS::StackName
+        RepositoryName:
+          Ref: AWS::StackName
+        SeedURL:
+          Ref: SeedURL
+        targetRepositoryName:
+          Ref: AWS::StackName
+        targetRepositoryRegion: us-east-1
+      TemplateURL:
+        Fn::Sub: https://s3.amazonaws.com/${TemplateBucket}/cicd.cft
+    Type: AWS::CloudFormation::Stack
+  DNSStack:
+    DependsOn:
+    - ApplicationStack
+    Properties:
+      Parameters:
+        EnvironmentURL:
+          Fn::GetAtt:
+          - ApplicationStack
+          - Outputs.EnvironmentURL
+      TemplateURL:
+        Fn::Sub: https://s3.amazonaws.com/${TemplateBucket}/dns.cft
+    Type: AWS::CloudFormation::Stack
+  NetworkStack:
+    Properties:
+      Parameters:
+        AppIngressPort:
+          Ref: AppIngressPort
+        AvailabilityZone1:
+          Ref: AvailabilityZone1
+        AvailabilityZone2:
+          Ref: AvailabilityZone2
+        ELBIngressPort:
+          Ref: ELBIngressPort
+        ELBIngressPortHTTPS:
+          Ref: ELBIngressPortHTTPS
+        SSHFrom:
+          Ref: SSHFrom
+        SingleNatGateway: true
+      TemplateURL:
+        Fn::Sub: https://s3.amazonaws.com/${TemplateBucket}/network.cft
+    Type: AWS::CloudFormation::Stack

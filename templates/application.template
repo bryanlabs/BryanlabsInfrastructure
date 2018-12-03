@@ -1,0 +1,346 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Conditions:
+  CreateProdEnv:
+    Fn::Equals:
+    - Ref: EnvironmentName
+    - prod
+  TlsEnabled:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: SSLCertificateArn
+      - ''
+Description: Bryanlabs Public Services.
+Mappings:
+  StackMap:
+    go:
+      stackName: 64bit Amazon Linux 2018.03 v2.9.2 running Go 1.11.1
+    node:
+      stackName: 64bit Amazon Linux 2018.03 v4.5.3 running Node.js
+    python:
+      stackName: 64bit Amazon Linux 2018.03 v2.7.3 running Python 2.7
+    python3:
+      stackName: 64bit Amazon Linux 2018.03 v2.7.3 running Python 3.6
+    rails:
+      stackName: 64bit Amazon Linux 2018.03 v2.8.3 running Ruby 2.4 (Puma)
+    spring:
+      stackName: 64bit Amazon Linux 2018.03 v2.7.5 running Java 8
+Outputs:
+  EnvironmentName:
+    Description: Environment Name
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-EnvironmentName
+    Value:
+      Fn::Sub: ${ApplicationName}-${EnvironmentName}
+  EnvironmentURL:
+    Description: Environment URL
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-EnvironmentURL
+    Value:
+      Fn::GetAtt:
+      - Environment
+      - EndpointURL
+  Name:
+    Description: Elastic Beanstalk Stack Name
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-Name
+    Value:
+      Ref: AWS::StackName
+  TypeOfStack:
+    Description: Stack type
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-TypeOfStack
+    Value:
+      Ref: StackType
+Parameters:
+  ApplicationName:
+    AllowedPattern: ^[a-zA-Z][-a-zA-Z0-9]*$
+    Description: Name of your application
+    MaxLength: 255
+    MinLength: 1
+    Type: String
+  AutoScalingMaxInstanceCount:
+    ConstraintDescription: Specify a number between 1 - 20
+    Default: 3
+    Description: Maximum number of EC2 instances for Auto Scaling
+    MaxValue: 20
+    MinValue: 1
+    Type: Number
+  AutoScalingMinInstanceCount:
+    ConstraintDescription: Specify a number between 1 - 20
+    Default: 1
+    Description: Minimum number of EC2 instances for Auto Scaling
+    MaxValue: 20
+    MinValue: 1
+    Type: Number
+  DevInstanceType:
+    Default: t2.micro
+    Description: The instance type for the dev environment
+    MaxLength: 255
+    MinLength: 1
+    Type: String
+  EC2KeyPairName:
+    Description: EC2 key pair name for SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+  EnvironmentName:
+    AllowedValues:
+    - dev
+    - prod
+    ConstraintDescription: Specify either dev or prod
+    Default: dev
+    Description: Environment name, either dev or prod.
+    MaxLength: 255
+    MinLength: 1
+    Type: String
+  NetworkStackName:
+    AllowedPattern: ^[a-zA-Z][-a-zA-Z0-9]*$
+    Default: network
+    Description: Name of an active CloudFormation stack of networking resources
+    MaxLength: 255
+    MinLength: 1
+    Type: String
+  ProdInstanceType:
+    Default: t2.micro
+    Description: The instance type for the prod environment
+    MaxLength: 255
+    MinLength: 1
+    Type: String
+  SSLCertificateArn:
+    Default: ''
+    Description: The SSL/TLS certificate ARN
+    MaxLength: 2048
+    MinLength: 0
+    Type: String
+  StackType:
+    AllowedValues:
+    - node
+    - rails
+    - spring
+    - python
+    - python3
+    - go
+    ConstraintDescription: Specify node, rails, python, python3, spring, or go
+    Default: go
+    Description: node, rails, python, python3 or spring
+    MaxLength: 255
+    MinLength: 1
+    Type: String
+Resources:
+  AppInstanceProfile:
+    Properties:
+      Path: /
+      Roles:
+      - Ref: AppRole
+    Type: AWS::IAM::InstanceProfile
+  AppRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      Path: /
+    Type: AWS::IAM::Role
+  Application:
+    Properties:
+      ApplicationName:
+        Ref: ApplicationName
+    Type: AWS::ElasticBeanstalk::Application
+  ConfigurationTemplate:
+    Properties:
+      ApplicationName:
+        Ref: Application
+      OptionSettings:
+      - Namespace: aws:elasticbeanstalk:environment
+        OptionName: EnvironmentType
+        Value: LoadBalanced
+      - Namespace: aws:elasticbeanstalk:environment:process:default
+        OptionName: HealthCheckPath
+        Value: /signin
+      - Namespace: aws:elasticbeanstalk:environment
+        OptionName: LoadBalancerType
+        Value: application
+      - Namespace: aws:elasticbeanstalk:environment
+        OptionName: ServiceRole
+        Value:
+          Ref: ElasticBeanstalkServiceRole
+      - Namespace: aws:autoscaling:asg
+        OptionName: MinSize
+        Value:
+          Ref: AutoScalingMinInstanceCount
+      - Namespace: aws:autoscaling:asg
+        OptionName: MaxSize
+        Value:
+          Ref: AutoScalingMaxInstanceCount
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: SecurityGroups
+        Value:
+          Fn::ImportValue:
+            Fn::Sub: ${NetworkStackName}-AppSecurityGroupID
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: SSHSourceRestriction
+        Value:
+          Fn::Join:
+          - ','
+          - - tcp, 22, 22
+            - Fn::ImportValue:
+                Fn::Sub: ${NetworkStackName}-BastionGroupID
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: InstanceType
+        Value:
+          Fn::If:
+          - CreateProdEnv
+          - Ref: ProdInstanceType
+          - Ref: DevInstanceType
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: IamInstanceProfile
+        Value:
+          Ref: AppInstanceProfile
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: EC2KeyName
+        Value:
+          Ref: EC2KeyPairName
+      - Namespace: aws:autoscaling:updatepolicy:rollingupdate
+        OptionName: RollingUpdateEnabled
+        Value: true
+      - Namespace: aws:autoscaling:updatepolicy:rollingupdate
+        OptionName: RollingUpdateType
+        Value: Health
+      - Namespace: aws:autoscaling:trigger
+        OptionName: MeasureName
+        Value: CPUUtilization
+      - Namespace: aws:autoscaling:trigger
+        OptionName: Unit
+        Value: Percent
+      - Namespace: aws:autoscaling:trigger
+        OptionName: UpperThreshold
+        Value: 80
+      - Namespace: aws:autoscaling:trigger
+        OptionName: LowerThreshold
+        Value: 40
+      - Namespace: aws:ec2:vpc
+        OptionName: VPCId
+        Value:
+          Fn::ImportValue:
+            Fn::Sub: ${NetworkStackName}-VpcID
+      - Namespace: aws:ec2:vpc
+        OptionName: Subnets
+        Value:
+          Fn::Join:
+          - ','
+          - - Fn::ImportValue:
+                Fn::Sub: ${NetworkStackName}-PrivateSubnet1ID
+            - Fn::ImportValue:
+                Fn::Sub: ${NetworkStackName}-PrivateSubnet2ID
+      - Namespace: aws:ec2:vpc
+        OptionName: ELBSubnets
+        Value:
+          Fn::Join:
+          - ','
+          - - Fn::ImportValue:
+                Fn::Sub: ${NetworkStackName}-PublicSubnet1ID
+            - Fn::ImportValue:
+                Fn::Sub: ${NetworkStackName}-PublicSubnet2ID
+      - Namespace: aws:elbv2:listener:default
+        OptionName: ListenerEnabled
+        Value: true
+      - Namespace: aws:elbv2:loadbalancer
+        OptionName: SecurityGroups
+        Value:
+          Fn::ImportValue:
+            Fn::Sub: ${NetworkStackName}-ELBSecurityGroupID
+      - Namespace: aws:elbv2:loadbalancer
+        OptionName: ManagedSecurityGroup
+        Value:
+          Fn::ImportValue:
+            Fn::Sub: ${NetworkStackName}-ELBSecurityGroupID
+      - Namespace: aws:elbv2:listenerrule:default
+        OptionName: PathPatterns
+        Value: /*
+      - Namespace:
+          Fn::Sub:
+          - aws:elbv2:listener:${ListenPort}
+          - ListenPort:
+              Fn::ImportValue:
+                Fn::Sub: ${NetworkStackName}-ELBIngressPortHTTPS
+        OptionName: Protocol
+        Value: HTTPS
+      - Namespace:
+          Fn::Sub:
+          - aws:elbv2:listener:${ListenPort}
+          - ListenPort:
+              Fn::ImportValue:
+                Fn::Sub: ${NetworkStackName}-ELBIngressPort
+        OptionName: Protocol
+        Value: HTTP
+      - Namespace:
+          Fn::Sub:
+          - aws:elbv2:listener:${ListenPort}
+          - ListenPort:
+              Fn::ImportValue:
+                Fn::Sub: ${NetworkStackName}-ELBIngressPortHTTPS
+        OptionName: Rules
+        Value: default
+      - Namespace:
+          Fn::Sub:
+          - aws:elbv2:listener:${ListenPort}
+          - ListenPort:
+              Fn::ImportValue:
+                Fn::Sub: ${NetworkStackName}-ELBIngressPort
+        OptionName: Rules
+        Value: default
+      - Namespace:
+          Fn::Sub:
+          - aws:elbv2:listener:${ListenPort}
+          - ListenPort:
+              Fn::ImportValue:
+                Fn::Sub: ${NetworkStackName}-ELBIngressPortHTTPS
+        OptionName: SSLCertificateArns
+        Value:
+          Ref: SSLCertificateArn
+      - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+        OptionName: StreamLogs
+        Value: true
+      - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+        OptionName: DeleteOnTerminate
+        Value: true
+      - Namespace: aws:elasticbeanstalk:application:environment
+        OptionName: AWS_REGION
+        Value:
+          Ref: AWS::Region
+      SolutionStackName:
+        Fn::FindInMap:
+        - StackMap
+        - Ref: StackType
+        - stackName
+    Type: AWS::ElasticBeanstalk::ConfigurationTemplate
+  ElasticBeanstalkServiceRole:
+    Properties:
+      AssumeRolePolicyDocument: "{\n  \"Statement\": [{\n    \"Effect\": \"Allow\"\
+        ,\n    \"Principal\": { \"Service\": [ \"elasticbeanstalk.amazonaws.com\"\
+        \ ]},\n    \"Action\": [ \"sts:AssumeRole\" ]\n  }]\n}\n"
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkEnhancedHealth
+      - arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkService
+      Path: /
+    Type: AWS::IAM::Role
+  Environment:
+    DependsOn:
+    - ConfigurationTemplate
+    Properties:
+      ApplicationName:
+        Ref: Application
+      EnvironmentName:
+        Ref: Application
+      TemplateName:
+        Ref: ConfigurationTemplate
+    Type: AWS::ElasticBeanstalk::Environment

@@ -1,0 +1,263 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DNS for Bryanlabs
+Mappings:
+  RegionMap:
+    us-east-1:
+      ZoneID: Z35SXDOTRQ7X7K
+    us-west-1:
+      ZoneID: Z368ELLRRE2KJ0
+Parameters:
+  EnvironmentURL:
+    Type: String
+Resources:
+  bryanlabsnet:
+    Properties:
+      Comment: Zone apex alias targeted to Elasticbeanstalk URL.
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - AliasTarget:
+          DNSName:
+            Fn::Join:
+            - .
+            - - dualstack
+              - Ref: EnvironmentURL
+          HostedZoneId:
+            Fn::FindInMap:
+            - RegionMap
+            - Ref: AWS::Region
+            - ZoneID
+        Name: bryanlabs.net.
+        Type: A
+    Type: AWS::Route53::RecordSetGroup
+  dns26io3yopnnrdpkq7gh5z5iwi2st2ueqydomainkeybryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: 26io3yopnnrdpkq7gh5z5iwi2st2ueqy._domainkey.bryanlabs.net.
+        ResourceRecords:
+        - 26io3yopnnrdpkq7gh5z5iwi2st2ueqy.dkim.amazonses.com
+        TTL: '1800'
+        Type: CNAME
+    Type: AWS::Route53::RecordSetGroup
+  dns69f2d426237bcc973dc5e1871c828e0bdanbryaninfo:
+    Properties:
+      HostedZoneId:
+        Ref: zonedanbryaninfo
+      RecordSets:
+      - Name: _69f2d426237bcc973dc5e1871c828e0b.danbryan.info.
+        ResourceRecords:
+        - _19a31c3078bcaf1a05d4b9931cb6427d.acm-validations.aws.
+        TTL: '300'
+        Type: CNAME
+    Type: AWS::Route53::RecordSetGroup
+  dns83d3961accb567953f0b491262938215bryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: _83d3961accb567953f0b491262938215.bryanlabs.net.
+        ResourceRecords:
+        - _137e9e0a2efe198074fa1f094386276a.acm-validations.aws.
+        TTL: '300'
+        Type: CNAME
+    Type: AWS::Route53::RecordSetGroup
+  dnsamazonsesbryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: _amazonses.bryanlabs.net.
+        ResourceRecords:
+        - '"2nCHRnlIipwfbbS91NA4QWgTqTAQenD1sOtZgp4oi/M="'
+        TTL: '1800'
+        Type: TXT
+    Type: AWS::Route53::RecordSetGroup
+  dnsasusbryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: asus.bryanlabs.net.
+        ResourceRecords:
+        - bryanlabs.asuscomm.com
+        TTL: '300'
+        Type: CNAME
+    Type: AWS::Route53::RecordSetGroup
+  dnsautodiscoverbryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: autodiscover.bryanlabs.net.
+        ResourceRecords:
+        - autodiscover.mail.us-east-1.awsapps.com.
+        TTL: '300'
+        Type: CNAME
+    Type: AWS::Route53::RecordSetGroup
+  dnsbryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: bryanlabs.net.
+        ResourceRecords:
+        - '"v=spf1 include:amazonses.com ~all"'
+        TTL: '300'
+        Type: TXT
+    Type: AWS::Route53::RecordSetGroup
+  dnsccbryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: cc.bryanlabs.net.
+        ResourceRecords:
+        - 18.207.205.233
+        TTL: '300'
+        Type: A
+    Type: AWS::Route53::RecordSetGroup
+  dnsdanbryaninfo:
+    Properties:
+      HostedZoneId:
+        Ref: zonedanbryaninfo
+      RecordSets:
+      - Name: danbryan.info.
+        ResourceRecords:
+        - '"google-site-verification=C41ycGKpFy534_IVNwiOyQ_4zD7HKs_K7H5jhmHDiqk"'
+        TTL: '300'
+        Type: TXT
+    Type: AWS::Route53::RecordSetGroup
+  dnsdevboxbryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: devbox.bryanlabs.net.
+        ResourceRecords:
+        - ec2-18-208-149-110.compute-1.amazonaws.com
+        TTL: '300'
+        Type: CNAME
+    Type: AWS::Route53::RecordSetGroup
+  dnsdmarcbryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: _dmarc.bryanlabs.net.
+        ResourceRecords:
+        - '"v=DMARC1;p=quarantine;pct=100;fo=1"'
+        TTL: '300'
+        Type: TXT
+    Type: AWS::Route53::RecordSetGroup
+  dnshomebryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: home.bryanlabs.net.
+        ResourceRecords:
+        - 108.31.56.170
+        TTL: '300'
+        Type: A
+    Type: AWS::Route53::RecordSetGroup
+  dnsmxbryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      Name: bryanlabs.net.
+      ResourceRecords:
+      - 10 inbound-smtp.us-east-1.amazonaws.com.
+      TTL: 600
+      Type: MX
+    Type: AWS::Route53::RecordSet
+  dnsp2p76bkd35u7mxeo7nnl7tsilmxneuz4domainkeybryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: p2p76bkd35u7mxeo7nnl7tsilmxneuz4._domainkey.bryanlabs.net.
+        ResourceRecords:
+        - p2p76bkd35u7mxeo7nnl7tsilmxneuz4.dkim.amazonses.com
+        TTL: '1800'
+        Type: CNAME
+    Type: AWS::Route53::RecordSetGroup
+  dnspvkepfwxthn5oyj5yixpaxvabl5hnbp6domainkeybryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: pvkepfwxthn5oyj5yixpaxvabl5hnbp6._domainkey.bryanlabs.net.
+        ResourceRecords:
+        - pvkepfwxthn5oyj5yixpaxvabl5hnbp6.dkim.amazonses.com
+        TTL: '1800'
+        Type: CNAME
+    Type: AWS::Route53::RecordSetGroup
+  dnswwwbryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: www.bryanlabs.net.
+        ResourceRecords:
+        - Ref: EnvironmentURL
+        TTL: '300'
+        Type: CNAME
+    Type: AWS::Route53::RecordSetGroup
+  dnswwwdanbryaninfo:
+    Properties:
+      HostedZoneId:
+        Ref: zonedanbryaninfo
+      RecordSets:
+      - Name: www.danbryan.info.
+        ResourceRecords:
+        - Ref: EnvironmentURL
+        TTL: '300'
+        Type: CNAME
+    Type: AWS::Route53::RecordSetGroup
+  dnsx1bryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: _x1.bryanlabs.net.
+        ResourceRecords:
+        - _x2.acm-validations.aws
+        TTL: '300'
+        Type: CNAME
+    Type: AWS::Route53::RecordSetGroup
+  dnsx1danbryaninfo:
+    Properties:
+      HostedZoneId:
+        Ref: zonedanbryaninfo
+      RecordSets:
+      - Name: _x1.danbryan.info.
+        ResourceRecords:
+        - _x2.acm-validations.aws
+        TTL: '300'
+        Type: CNAME
+    Type: AWS::Route53::RecordSetGroup
+  nsrecordsbryanlabsnet:
+    Properties:
+      HostedZoneId:
+        Ref: zonebryanlabsnet
+      RecordSets:
+      - Name: ns.bryanlabs.net.
+        ResourceRecords:
+        - _137e9e0a2efe198074fa1f094386276a.acm-validations.aws.
+        TTL: '300'
+        Type: CNAME
+    Type: AWS::Route53::RecordSetGroup
+  zonebryanlabsnet:
+    Properties:
+      HostedZoneConfig:
+        Comment: HostedZone created by Route53 Registrar
+      Name: bryanlabs.net.
+    Type: AWS::Route53::HostedZone
+  zonedanbryaninfo:
+    Properties:
+      HostedZoneConfig:
+        Comment: HostedZone created by Route53 Registrar
+      Name: danbryan.info.
+    Type: AWS::Route53::HostedZone

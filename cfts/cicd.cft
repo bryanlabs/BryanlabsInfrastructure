@@ -1,0 +1,631 @@
+AWSTemplateFormatVersion: 2010-09-09
+Conditions:
+  CreateCodeBuildResources:
+    Fn::Equals:
+    - true
+    - true
+  CreateWebSiteS3Bucket:
+    Fn::Equals:
+    - true
+    - false
+Description: Continuous Integration and Continuous Delivery.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Application
+      Parameters:
+      - ProjectId
+  CodeBuildImage: aws/codebuild/golang:1.10
+  CodeBuildImageOverride: aws/codebuild/golang:1.10
+  CreateCodeBuild: true
+  WebsiteS3Bucket: AWS::NoValue
+Outputs:
+  Name:
+    Description: CICD Stack Name
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-Name
+    Value:
+      Ref: AWS::StackName
+  SSHCloneURL:
+    Description: SSH Clone URL for application.
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-SSHCloneURL
+    Value:
+      Fn::Join:
+      - ''
+      - - ssh://git-codecommit.us-east-1.amazonaws.com/v1/repos/
+        - Ref: RepositoryName
+Parameters:
+  AppName:
+    Description: Name of the application.
+    MaxLength: 100
+    MinLength: 1
+    Type: String
+  ProjectId:
+    AllowedPattern: ^[a-z]([a-z0-9-])+$
+    ConstraintDescription: Project IDs must be between 2 and 15 characters, begin
+      with a letter, and only contain lowercase letters, numbers, and hyphens (-).
+    Description: Project ID.
+    MaxLength: 15
+    MinLength: 2
+    Type: String
+  RepositoryName:
+    Description: AWS CodeCommit repository name.
+    MaxLength: 100
+    MinLength: 1
+    Type: String
+  SeedURL:
+    Description: Enter the URL to source for seeding.
+    Type: String
+  targetRepositoryName:
+    Description: Enter the CodeCommit repository name to target for seeding.
+    Type: String
+  targetRepositoryRegion:
+    Default: us-east-1
+    Description: Enter the CodeCommit repository region to target for seeding.
+    Type: String
+Resources:
+  CloudFormationTrustRole:
+    Description: Creating service role in IAM for AWS CloudFormation
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - cloudformation.amazonaws.com
+      Path: /
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - iam:CreateRole
+            - iam:PutRolePolicy
+            Effect: Allow
+            Resource:
+            - '*'
+          - Action:
+            - s3:CreateBucket
+            - s3:DeleteBucket
+            - ec2:*
+            - '*'
+            Effect: Allow
+            Resource:
+            - '*'
+          - Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:GetObjectVersion
+            Effect: Allow
+            Resource:
+            - arn:aws:s3:::bryanlabs-public/iac/pipe
+            - arn:aws:s3:::bryanlabs-public/iac/pipe/*
+          - Action:
+            - cloudformation:CreateChangeSet
+            Effect: Allow
+            Resource:
+            - Fn::Sub: arn:aws:cloudformation:${AWS::Region}:aws:transform/Serverless-2016-10-31
+          - Action:
+            - cloudformation:CreateStack
+            - cloudformation:DeleteStack
+            - cloudformation:GetTemplate
+            - cloudformation:ListStackResources
+            - cloudformation:UpdateStack
+            - cloudformation:DescribeStack*
+            Effect: Allow
+            Resource:
+            - Fn::Sub: arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/*
+        PolicyName: WorkerCloudFormationRolePolicy
+      RoleName:
+        Fn::Sub: Worker-${ProjectId}-CloudFormation
+    Type: AWS::IAM::Role
+  CodeBuildPolicy:
+    Condition: CreateCodeBuildResources
+    Description: Setting IAM policy for service role for Amazon EC2 instances
+    Properties:
+      PolicyDocument:
+        Statement:
+        - Action:
+          - elasticbeanstalk:*
+          Effect: Allow
+          Resource: '*'
+        - Action:
+          - s3:*
+          Effect: Allow
+          Resource: arn:aws:s3:::bryanlabs-public/*
+        - Action:
+          - cloudformation:describe*
+          Effect: Allow
+          Resource: '*'
+        - Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          Effect: Allow
+          Resource: '*'
+        - Action:
+          - s3:PutObject
+          - s3:GetObject
+          - s3:GetObjectVersion
+          Effect: Allow
+          Resource:
+          - arn:aws:s3:::bryanlabs-public/iac/pipe/*
+          - arn:aws:s3:::bryanlabs-public/iac/pipe
+        - Action:
+          - codecommit:GitPull
+          Effect: Allow
+          Resource:
+          - Fn::Join:
+            - ':'
+            - - arn
+              - aws
+              - codecommit
+              - Ref: AWS::Region
+              - Ref: AWS::AccountId
+              - Ref: RepositoryName
+        - Action:
+          - kms:GenerateDataKey*
+          - kms:Encrypt
+          - kms:Decrypt
+          Effect: Allow
+          Resource:
+          - Fn::Join:
+            - ':'
+            - - arn:aws:kms
+              - Ref: AWS::Region
+              - Ref: AWS::AccountId
+              - Fn::Join:
+                - /
+                - - alias
+                  - aws/s3
+      PolicyName: WorkerCodeBuildPolicy
+      Roles:
+      - Ref: CodeBuildRole
+    Type: AWS::IAM::Policy
+  CodeBuildProject:
+    Condition: CreateCodeBuildResources
+    DependsOn:
+    - CodeBuildPolicy
+    Properties:
+      Artifacts:
+        Packaging: zip
+        Type: codepipeline
+      Description:
+        Fn::Join:
+        - ''
+        - - 'AWS created CodeBuild Project for '
+          - Ref: AppName
+      Environment:
+        ComputeType: small
+        Image: aws/codebuild/golang:1.10
+        Type: container
+      Name:
+        Ref: ProjectId
+      ServiceRole:
+        Ref: CodeBuildRole
+      Source:
+        Type: codepipeline
+    Type: AWS::CodeBuild::Project
+  CodeBuildRole:
+    Condition: CreateCodeBuildResources
+    Description: Creating service role in IAM for Amazon EC2 instances
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service: codebuild.amazonaws.com
+      Path: /
+      RoleName:
+        Fn::Join:
+        - '-'
+        - - Worker
+          - Ref: ProjectId
+          - CodeBuild
+    Type: AWS::IAM::Role
+  CodeCommitRepo:
+    Description: Creating AWS CodeCommit repository for application source code
+    Properties:
+      RepositoryDescription:
+        Fn::Join:
+        - ''
+        - - Ref: ProjectId
+          - ' project repository'
+      RepositoryName:
+        Ref: RepositoryName
+    Type: AWS::CodeCommit::Repository
+  CodePipelineTrustRole:
+    Description: Creating service role in IAM for AWS CodePipeline
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - codepipeline.amazonaws.com
+          Sid: 1
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AWSElasticBeanstalkFullAccess
+      Path: /
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - s3:CreateBucket
+            Effect: Allow
+            Resource: '*'
+          - Action:
+            - elasticbeanstalk:*
+            Effect: Allow
+            Resource: '*'
+          - Action:
+            - s3:*
+            Effect: Allow
+            Resource:
+            - arn:aws:s3:::bryanlabs-public/iac/pipe/*
+            - arn:aws:s3:::bryanlabs-public/iac/pipe
+          - Action:
+            - codecommit:CancelUploadArchive
+            - codecommit:GetBranch
+            - codecommit:GetCommit
+            - codecommit:GetUploadArchiveStatus
+            - codecommit:UploadArchive
+            Effect: Allow
+            Resource:
+            - Fn::Sub: arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${RepositoryName}
+          - Fn::If:
+            - CreateCodeBuildResources
+            - Action:
+              - codebuild:StartBuild
+              - codebuild:BatchGetBuilds
+              - codebuild:StopBuild
+              Effect: Allow
+              Resource:
+              - Fn::GetAtt:
+                - CodeBuildProject
+                - Arn
+            - Ref: AWS::NoValue
+          - Action:
+            - logs:*
+            Effect: Allow
+            Resource: '*'
+          - Action:
+            - cloudformation:GetTemplate
+            - cloudformation:ListStackResources
+            - cloudformation:UpdateStack
+            - cloudformation:Describe*
+            - cloudformation:CreateChangeSet
+            - cloudformation:ExecuteChangeSet
+            Effect: Allow
+            Resource:
+            - Fn::Sub: arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/*
+          - Action:
+            - cloudformation:DescribeStacks
+            - cloudformation:DescribeChangeSet
+            - cloudformation:CreateChangeSet
+            - cloudformation:DeleteChangeSet
+            - cloudformation:ExecuteChangeSet
+            Effect: Allow
+            Resource:
+            - Fn::Sub: arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectId}-infrastructure/*
+          - Action:
+            - iam:PassRole
+            Effect: Allow
+            Resource:
+            - Fn::GetAtt:
+              - CloudFormationTrustRole
+              - Arn
+        PolicyName: WorkerCodePipelinePolicy
+      RoleName:
+        Fn::Sub: Worker-${ProjectId}-CodePipeline
+    Type: AWS::IAM::Role
+  ProjectPipeline:
+    DependsOn:
+    - SeedRepo
+    - CodePipelineTrustRole
+    Description: Creating a deployment pipeline for your project in AWS CodePipeline
+    Properties:
+      ArtifactStore:
+        Location: bryanlabs-public
+        Type: S3
+      Name:
+        Fn::Sub: ${ProjectId}-Pipeline
+      RoleArn:
+        Fn::GetAtt:
+        - CodePipelineTrustRole
+        - Arn
+      Stages:
+      - Actions:
+        - ActionTypeId:
+            Category: Source
+            Owner: AWS
+            Provider: CodeCommit
+            Version: '1'
+          Configuration:
+            BranchName: master
+            PollForSourceChanges: false
+            RepositoryName:
+              Ref: RepositoryName
+          Name: TemplateSource
+          OutputArtifacts:
+          - Name: TemplateSource
+        Name: CodeCommitSource
+      - Actions:
+        - ActionTypeId:
+            Category: Build
+            Owner: AWS
+            Provider: CodeBuild
+            Version: '1'
+          Configuration:
+            ProjectName:
+              Ref: ProjectId
+          InputArtifacts:
+          - Name: TemplateSource
+          Name: PublishTemplate
+          OutputArtifacts:
+          - Name: BuildArtifact
+          RunOrder: '1'
+        Name: Build
+      - Actions:
+        - ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Provider: CloudFormation
+            Version: '1'
+          Configuration:
+            ActionMode: CHANGE_SET_REPLACE
+            Capabilities: CAPABILITY_NAMED_IAM
+            ChangeSetName: pipeline-changeset
+            ParameterOverrides: "{\n  \"EC2KeyPairName\" : \"BRYANLABS-AWS\",\n  \"\
+              SeedURL\" : \"https://s3.amazonaws.com/bryanlabs-public/bryanlabs.zip\"\
+              ,\n  \"TemplateBucket\" : \"bryanlabs-public/iac\"\n}\n"
+            RoleArn:
+              Fn::GetAtt:
+              - CloudFormationTrustRole
+              - Arn
+            StackName:
+              Ref: AppName
+            TemplatePath:
+              Fn::Sub: BuildArtifact::template-export.yml
+          InputArtifacts:
+          - Name: BuildArtifact
+          Name: CreateChangeSet
+          OutputArtifacts:
+          - Name: ChangeSet
+          RunOrder: '1'
+        - ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Provider: CloudFormation
+            Version: '1'
+          Configuration:
+            ActionMode: CHANGE_SET_EXECUTE
+            ChangeSetName: pipeline-changeset
+            StackName:
+              Ref: AppName
+          InputArtifacts:
+          - Name: ChangeSet
+          Name: ExecuteChangeSet
+          RunOrder: '2'
+        - ActionTypeId:
+            Category: Deploy
+            Owner: AWS
+            Provider: ElasticBeanstalk
+            Version: '1'
+          Configuration:
+            ApplicationName:
+              Fn::Sub: ${ProjectId}
+            EnvironmentName:
+              Fn::Sub: ${ProjectId}
+          InputArtifacts:
+          - Name:
+              Fn::Sub: BuildArtifact
+          Name: UpdateApplication
+          RunOrder: '3'
+        Name: Deploy
+    Type: AWS::CodePipeline::Pipeline
+  S3ArtifactBucketPolicy:
+    Description: Setting Amazon S3 bucket policy for AWS CodePipeline access
+    Properties:
+      Bucket: bryanlabs-public
+      PolicyDocument:
+        Id: SSEAndSSLPolicy
+        Statement:
+        - Action: s3:PutObject
+          Condition:
+            Bool:
+              aws:SecureTransport: false
+            StringNotEquals:
+              s3:x-amz-server-side-encryption: aws:kms
+          Effect: Deny
+          Principal: '*'
+          Resource: arn:aws:s3:::bryanlabs-public/iac/pipe/*
+          Sid: DenyUnEncryptedObjectUploads
+        - Action:
+          - s3:GetBucketVersioning
+          Condition:
+            Bool:
+              aws:SecureTransport: true
+          Effect: Allow
+          Principal:
+            AWS:
+            - Fn::GetAtt:
+              - CodePipelineTrustRole
+              - Arn
+            - Fn::If:
+              - CreateCodeBuildResources
+              - Fn::GetAtt:
+                - CodeBuildRole
+                - Arn
+              - Ref: AWS::NoValue
+          Resource:
+          - arn:aws:s3:::bryanlabs-public
+          Sid: OnlyCodeApplications-1
+        - Action:
+          - s3:GetObject
+          - s3:GetObjectVersion
+          - s3:PutObject
+          Condition:
+            Bool:
+              aws:SecureTransport: true
+          Effect: Allow
+          Principal:
+            AWS:
+            - Fn::GetAtt:
+              - CodePipelineTrustRole
+              - Arn
+            - Fn::If:
+              - CreateCodeBuildResources
+              - Fn::GetAtt:
+                - CodeBuildRole
+                - Arn
+              - Ref: AWS::NoValue
+          Resource:
+          - arn:aws:s3:::bryanlabs-public/iac/pipe/*
+          Sid: OnlyCodeApplications-2
+        Version: 2012-10-17
+    Type: AWS::S3::BucketPolicy
+  SeedRepo:
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - SeederFunction
+        - Arn
+      sourceUrl:
+        Ref: SeedURL
+      targetRepositoryName:
+        Ref: targetRepositoryName
+      targetRepositoryRegion:
+        Ref: targetRepositoryRegion
+    Type: Custom::SeedRepo
+  SeederFunction:
+    Properties:
+      Code:
+        S3Bucket: bryanlabs-public
+        S3Key: aws-serverless-codecommit-seeder.zip
+      Description: CodeCommit Repository Seeder
+      Handler: seeder.SeedRepositoryHandler
+      MemorySize: 1028
+      Role:
+        Fn::GetAtt:
+        - SeederRole
+        - Arn
+      Runtime: java8
+      Timeout: 300
+    Type: AWS::Lambda::Function
+  SeederRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+        Version: '2012-10-17'
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - codecommit:GetRepository
+            - codecommit:GitPush
+            Effect: Allow
+            Resource:
+              Fn::Sub: arn:aws:codecommit:${targetRepositoryRegion}:${AWS::AccountId}:${targetRepositoryName}
+          Version: '2012-10-17'
+        PolicyName: SeederRolePolicy
+    Type: AWS::IAM::Role
+  SourceEvent:
+    Properties:
+      Description: Rule for Amazon CloudWatch Events to detect changes to the source
+        repository and trigger pipeline execution
+      EventPattern:
+        detail:
+          event:
+          - referenceCreated
+          - referenceUpdated
+          referenceName:
+          - master
+          referenceType:
+          - branch
+        detail-type:
+        - CodeCommit Repository State Change
+        resources:
+        - Fn::GetAtt:
+          - CodeCommitRepo
+          - Arn
+        source:
+        - aws.codecommit
+      Name:
+        Fn::Join:
+        - '-'
+        - - Ref: ProjectId
+          - SourceEvent
+      State: ENABLED
+      Targets:
+      - Arn:
+          Fn::Join:
+          - ':'
+          - - arn
+            - aws
+            - codepipeline
+            - Ref: AWS::Region
+            - Ref: AWS::AccountId
+            - Fn::Join:
+              - '-'
+              - - Ref: ProjectId
+                - Pipeline
+        Id: ProjectPipelineTarget
+        RoleArn:
+          Fn::GetAtt:
+          - SourceEventRole
+          - Arn
+    Type: AWS::Events::Rule
+  SourceEventRole:
+    Description: IAM role to allow Amazon CloudWatch Events to trigger AWS CodePipeline
+      execution
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - events.amazonaws.com
+          Sid: 1
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - codepipeline:StartPipelineExecution
+            Effect: Allow
+            Resource:
+            - Fn::Join:
+              - ':'
+              - - arn
+                - aws
+                - codepipeline
+                - Ref: AWS::Region
+                - Ref: AWS::AccountId
+                - Fn::Join:
+                  - '-'
+                  - - Ref: ProjectId
+                    - Pipeline
+        PolicyName: WorkerCloudWatchEventPolicy
+      RoleName:
+        Fn::Join:
+        - '-'
+        - - Worker
+          - Ref: ProjectId
+          - CloudWatchEventRule
+    Type: AWS::IAM::Role

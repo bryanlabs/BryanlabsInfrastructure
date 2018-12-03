@@ -1,0 +1,28 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Simple Active Directory Stack
+Parameters:
+  NetworkStackName:
+    Type: String
+  SimpleADPW:
+    Type: String
+Resources:
+  myDirectory:
+    Properties:
+      CreateAlias: false
+      Description: Bryanlabs.
+      EnableSso: false
+      Name: bryanlabs.net
+      Password:
+        Ref: SimpleADPW
+      ShortName: BL
+      Size: Small
+      VpcSettings:
+        SubnetIds:
+        - Fn::ImportValue:
+            Fn::Sub: ${NetworkStackName}-PrivateSubnet1ID
+        - Fn::ImportValue:
+            Fn::Sub: ${NetworkStackName}-PrivateSubnet2ID
+        VpcId:
+          Fn::ImportValue:
+            Fn::Sub: ${NetworkStackName}-VpcID
+    Type: AWS::DirectoryService::SimpleAD

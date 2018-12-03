@@ -1,0 +1,531 @@
+AWSTemplateFormatVersion: 2010-09-09
+Conditions:
+  CreateMultipleNatGateways:
+    Fn::Not:
+    - Condition: CreateSingleNatGateway
+  CreateSingleNatGateway:
+    Fn::Equals:
+    - Ref: SingleNatGateway
+    - true
+Description: Network Resources. (VPC, Subnets, Gateways, Routes, Securitygroups.)
+Mappings:
+  CIDRMap:
+    Private1:
+      CIDR: 10.10.64.0/19
+    Private2:
+      CIDR: 10.10.96.0/19
+    Public1:
+      CIDR: 10.10.0.0/24
+    Public2:
+      CIDR: 10.10.1.0/24
+    VPC:
+      CIDR: 10.10.0.0/16
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Region Availability Zones
+      Parameters:
+      - AvailabilityZone1
+      - AvailabilityZone2
+    ParameterLabels:
+      AvailabilityZone1:
+        default: Availability Zone 1
+      AvailabilityZone2:
+        default: Availability Zone 2
+Outputs:
+  AppIngressPort:
+    Description: App ingress port
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-AppIngressPort
+    Value:
+      Ref: AppIngressPort
+  AppSecurityGroup:
+    Description: Security group ID for app behind ELB
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-AppSecurityGroupID
+    Value:
+      Fn::GetAtt:
+      - AppSecurityGroup
+      - GroupId
+  BastionSecurityGroup:
+    Description: Security group ID for bastion host
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-BastionGroupID
+    Value:
+      Fn::GetAtt:
+      - BastionSecurityGroup
+      - GroupId
+  ELBIngressPort:
+    Description: ELB ingress port
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-ELBIngressPort
+    Value:
+      Ref: ELBIngressPort
+  ELBIngressPortHTTPS:
+    Description: ELB ingress port HTTP
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-ELBIngressPortHTTPS
+    Value:
+      Ref: ELBIngressPortHTTPS
+  ELBSecurityGroup:
+    Description: Security group ID for Internet-facing ELB
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-ELBSecurityGroupID
+    Value:
+      Fn::GetAtt:
+      - ELBSecurityGroup
+      - GroupId
+  Name:
+    Description: VPC Stack Name
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-Name
+    Value:
+      Ref: AWS::StackName
+  PrivateSubnet1:
+    Description: Private subnet 1 ID
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-PrivateSubnet1ID
+    Value:
+      Ref: PrivateSubnet1
+  PrivateSubnet2:
+    Description: Private subnet 2 ID
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-PrivateSubnet2ID
+    Value:
+      Ref: PrivateSubnet2
+  PublicSubnet1:
+    Description: Public subnet 1 ID
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-PublicSubnet1ID
+    Value:
+      Ref: PublicSubnet1
+  PublicSubnet2:
+    Description: Public subnet 2 ID
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-PublicSubnet2ID
+    Value:
+      Ref: PublicSubnet2
+  VPCId:
+    Description: VPC ID
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-VpcID
+    Value:
+      Ref: VPC
+  VpcCidr:
+    Description: Vpc cidr block
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-vpc-cidr
+    Value:
+      Fn::FindInMap:
+      - CIDRMap
+      - VPC
+      - CIDR
+Parameters:
+  AppIngressPort:
+    ConstraintDescription: TCP ports must be between 0 - 65535
+    Default: 80
+    Description: The application ingress port used by security groups
+    MaxValue: 65535
+    MinValue: 0
+    Type: Number
+  AvailabilityZone1:
+    ConstraintDescription: Must be a valid availability zone
+    Default: us-east-1c
+    Description: The first availability zone in the region
+    Type: AWS::EC2::AvailabilityZone::Name
+  AvailabilityZone2:
+    ConstraintDescription: Must be a valid availability zone
+    Default: us-east-1d
+    Description: The second availability zone in the region
+    Type: AWS::EC2::AvailabilityZone::Name
+  ELBIngressPort:
+    ConstraintDescription: TCP ports must be between 0 - 65535
+    Default: 80
+    Description: The ELB ingress port used by security groups
+    MaxValue: 65535
+    MinValue: 0
+    Type: Number
+  ELBIngressPortHTTPS:
+    ConstraintDescription: TCP ports must be between 0 - 65535
+    Default: 443
+    Description: The ELB ingress port used by security groups
+    MaxValue: 65535
+    MinValue: 0
+    Type: Number
+  SSHFrom:
+    Default: 0.0.0.0/0
+    Description: Limit SSH access to bastion hosts to a CIDR IP block
+    MaxLength: 18
+    MinLength: 9
+    Type: String
+  SingleNatGateway:
+    AllowedValues:
+    - true
+    - false
+    ConstraintDescription: Value must be true or false
+    Default: true
+    Description: Set to true to only install one NAT gateway
+    Type: String
+Resources:
+  AppSecurityGroup:
+    Properties:
+      GroupDescription: Enable access from ELB to app
+      SecurityGroupIngress:
+      - FromPort:
+          Ref: AppIngressPort
+        IpProtocol: tcp
+        SourceSecurityGroupId:
+          Ref: ELBSecurityGroup
+        ToPort:
+          Ref: AppIngressPort
+      - FromPort: 22
+        IpProtocol: tcp
+        SourceSecurityGroupId:
+          Ref: BastionSecurityGroup
+        ToPort: 22
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-AppSecurityGroup
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::SecurityGroup
+  AppSecurityGroupFromBastionIngress:
+    Properties:
+      FromPort: 22
+      GroupId:
+        Ref: AppSecurityGroup
+      IpProtocol: tcp
+      SourceSecurityGroupId:
+        Ref: BastionSecurityGroup
+      ToPort: 22
+    Type: AWS::EC2::SecurityGroupIngress
+  AppSecurityGroupFromELBIngress:
+    Properties:
+      FromPort:
+        Ref: AppIngressPort
+      GroupId:
+        Ref: AppSecurityGroup
+      IpProtocol: tcp
+      SourceSecurityGroupId:
+        Ref: ELBSecurityGroup
+      ToPort:
+        Ref: AppIngressPort
+    Type: AWS::EC2::SecurityGroupIngress
+  BastionSecurityGroup:
+    Properties:
+      GroupDescription: Enable access to the bastion host
+      SecurityGroupEgress:
+      - CidrIp: 0.0.0.0/0
+        FromPort: 80
+        IpProtocol: tcp
+        ToPort: 80
+      - CidrIp: 0.0.0.0/0
+        FromPort: 443
+        IpProtocol: tcp
+        ToPort: 443
+      - CidrIp: 0.0.0.0/0
+        FromPort: 123
+        IpProtocol: udp
+        ToPort: 123
+      - CidrIp: 0.0.0.0/0
+        FromPort: 22
+        IpProtocol: tcp
+        ToPort: 22
+      SecurityGroupIngress:
+      - CidrIp:
+          Ref: SSHFrom
+        FromPort: 22
+        IpProtocol: tcp
+        ToPort: 22
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-BastionSecurityGroup
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::SecurityGroup
+  ELBSecurityGroup:
+    Properties:
+      GroupDescription: Enable HTTP/HTTPs ingress
+      SecurityGroupIngress:
+      - CidrIp: 0.0.0.0/0
+        FromPort:
+          Ref: ELBIngressPort
+        IpProtocol: tcp
+        ToPort:
+          Ref: ELBIngressPort
+      - CidrIp: 0.0.0.0/0
+        FromPort:
+          Ref: ELBIngressPortHTTPS
+        IpProtocol: tcp
+        ToPort:
+          Ref: ELBIngressPortHTTPS
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-ELBSecurityGroup
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::SecurityGroup
+  ELBSecurityGroupToAppEgress:
+    Properties:
+      DestinationSecurityGroupId:
+        Ref: AppSecurityGroup
+      FromPort:
+        Ref: AppIngressPort
+      GroupId:
+        Ref: ELBSecurityGroup
+      IpProtocol: tcp
+      ToPort:
+        Ref: AppIngressPort
+    Type: AWS::EC2::SecurityGroupEgress
+  InternetGateway:
+    Properties:
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-igw
+    Type: AWS::EC2::InternetGateway
+  NatEIP1:
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc
+    Type: AWS::EC2::EIP
+  NatEIP2:
+    Condition: CreateMultipleNatGateways
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc
+    Type: AWS::EC2::EIP
+  NatGateway1:
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+        - NatEIP1
+        - AllocationId
+      SubnetId:
+        Ref: PublicSubnet1
+    Type: AWS::EC2::NatGateway
+  NatGateway2:
+    Condition: CreateMultipleNatGateways
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+        - NatEIP2
+        - AllocationId
+      SubnetId:
+        Ref: PublicSubnet2
+    Type: AWS::EC2::NatGateway
+  NatRoute1:
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:
+        Ref: NatGateway1
+      RouteTableId:
+        Ref: NatRouteTable1
+    Type: AWS::EC2::Route
+  NatRoute2:
+    Condition: CreateMultipleNatGateways
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:
+        Ref: NatGateway2
+      RouteTableId:
+        Ref: NatRouteTable2
+    Type: AWS::EC2::Route
+  NatRouteTable1:
+    Properties:
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-private-nat-1
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::RouteTable
+  NatRouteTable2:
+    Condition: CreateMultipleNatGateways
+    Properties:
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-private-nat-2
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::RouteTable
+  PrivateSubnet1:
+    Properties:
+      AvailabilityZone:
+        Ref: AvailabilityZone1
+      CidrBlock:
+        Fn::FindInMap:
+        - CIDRMap
+        - Private1
+        - CIDR
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-PrivateSubnet1
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::Subnet
+  PrivateSubnet2:
+    Properties:
+      AvailabilityZone:
+        Ref: AvailabilityZone2
+      CidrBlock:
+        Fn::FindInMap:
+        - CIDRMap
+        - Private2
+        - CIDR
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-PrivateSubnet2
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::Subnet
+  PrivateSubnetRouteTableAssociation1:
+    Properties:
+      RouteTableId:
+        Ref: NatRouteTable1
+      SubnetId:
+        Ref: PrivateSubnet1
+    Type: AWS::EC2::SubnetRouteTableAssociation
+  PrivateSubnetRouteTableAssociation2:
+    Condition: CreateMultipleNatGateways
+    Properties:
+      RouteTableId:
+        Ref: NatRouteTable2
+      SubnetId:
+        Ref: PrivateSubnet2
+    Type: AWS::EC2::SubnetRouteTableAssociation
+  PrivateSubnetRouteTableAssociationSingleNatGateway:
+    Condition: CreateSingleNatGateway
+    Properties:
+      RouteTableId:
+        Ref: NatRouteTable1
+      SubnetId:
+        Ref: PrivateSubnet2
+    Type: AWS::EC2::SubnetRouteTableAssociation
+  PublicRoute:
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: InternetGateway
+      RouteTableId:
+        Ref: PublicRouteTable
+    Type: AWS::EC2::Route
+  PublicRouteTable:
+    Properties:
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-public-igw
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::RouteTable
+  PublicSubnet1:
+    Properties:
+      AvailabilityZone:
+        Ref: AvailabilityZone1
+      CidrBlock:
+        Fn::FindInMap:
+        - CIDRMap
+        - Public1
+        - CIDR
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-PublicSubnet1
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::Subnet
+  PublicSubnet2:
+    Properties:
+      AvailabilityZone:
+        Ref: AvailabilityZone2
+      CidrBlock:
+        Fn::FindInMap:
+        - CIDRMap
+        - Public2
+        - CIDR
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Sub: ${AWS::StackName}-PublicSubnet2
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::Subnet
+  PublicSubnetNetworkAclAssociation1:
+    Properties:
+      NetworkAclId:
+        Fn::GetAtt:
+        - VPC
+        - DefaultNetworkAcl
+      SubnetId:
+        Ref: PublicSubnet1
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+  PublicSubnetNetworkAclAssociation2:
+    Properties:
+      NetworkAclId:
+        Fn::GetAtt:
+        - VPC
+        - DefaultNetworkAcl
+      SubnetId:
+        Ref: PublicSubnet2
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+  PublicSubnetRouteTableAssociation1:
+    Properties:
+      RouteTableId:
+        Ref: PublicRouteTable
+      SubnetId:
+        Ref: PublicSubnet1
+    Type: AWS::EC2::SubnetRouteTableAssociation
+  PublicSubnetRouteTableAssociation2:
+    Properties:
+      RouteTableId:
+        Ref: PublicRouteTable
+      SubnetId:
+        Ref: PublicSubnet2
+    Type: AWS::EC2::SubnetRouteTableAssociation
+  VPC:
+    Properties:
+      CidrBlock:
+        Fn::FindInMap:
+        - CIDRMap
+        - VPC
+        - CIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+      - Key: Name
+        Value:
+          Ref: AWS::StackName
+    Type: AWS::EC2::VPC
+  VPCGatewayAttachment:
+    Properties:
+      InternetGatewayId:
+        Ref: InternetGateway
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::VPCGatewayAttachment
