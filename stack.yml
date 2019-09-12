@@ -30,14 +30,14 @@ Metadata:
       TemplateBucket:
         default: CloudFormation Bucket
 Outputs:
-  ApplicationStackName:
-    Export:
-      Name:
-        Fn::Sub: ${AWS::StackName}-ApplicationStack
-    Value:
-      Fn::GetAtt:
-      - ApplicationStack
-      - Outputs.Name
+  # ApplicationStackName:
+  #   Export:
+  #     Name:
+  #       Fn::Sub: ${AWS::StackName}-ApplicationStack
+  #   Value:
+  #     Fn::GetAtt:
+  #     - ApplicationStack
+  #     - Outputs.Name
   BastionStackName:
     Export:
       Name:
@@ -130,28 +130,28 @@ Resources:
       TemplateURL:
         Fn::Sub: https://s3.amazonaws.com/${TemplateBucket}/ad.cft
     Type: AWS::CloudFormation::Stack
-  ApplicationStack:
-    DependsOn:
-    - NetworkStack
-    Properties:
-      Parameters:
-        ApplicationName:
-          Ref: AWS::StackName
-        AutoScalingMaxInstanceCount: 2
-        AutoScalingMinInstanceCount: 1
-        DevInstanceType: t2.micro
-        EC2KeyPairName:
-          Ref: EC2KeyPairName
-        SSLCertificateArn: arn:aws:acm:us-east-1:601953533983:certificate/2b1ae724-54fc-48f9-a782-ede230d61713
-        EnvironmentName: dev
-        NetworkStackName:
-          Fn::GetAtt:
-          - NetworkStack
-          - Outputs.Name
-        StackType: go
-      TemplateURL:
-        Fn::Sub: https://s3.amazonaws.com/${TemplateBucket}/application.cft
-    Type: AWS::CloudFormation::Stack
+  # ApplicationStack:
+  #   DependsOn:
+  #   - NetworkStack
+  #   Properties:
+  #     Parameters:
+  #       ApplicationName:
+  #         Ref: AWS::StackName
+  #       AutoScalingMaxInstanceCount: 2
+  #       AutoScalingMinInstanceCount: 1
+  #       DevInstanceType: t2.micro
+  #       EC2KeyPairName:
+  #         Ref: EC2KeyPairName
+  #       SSLCertificateArn: arn:aws:acm:us-east-1:601953533983:certificate/2b1ae724-54fc-48f9-a782-ede230d61713
+  #       EnvironmentName: dev
+  #       NetworkStackName:
+  #         Fn::GetAtt:
+  #         - NetworkStack
+  #         - Outputs.Name
+  #       StackType: go
+  #     TemplateURL:
+  #       Fn::Sub: https://s3.amazonaws.com/${TemplateBucket}/application.cft
+  #   Type: AWS::CloudFormation::Stack
   BastionStack:
     DependsOn:
     - NetworkStack
